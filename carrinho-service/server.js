@@ -2,26 +2,28 @@ const express = require('express');
 const amqp = require('amqplib');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
-const app = express();
 
+const app = express();
 app.use(express.json());
 
-// PostgreSQL
+// PostgreSQL (mesmo DATABASE_URL apontando para 'db:5432/ecommerce')
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-// Criação da tabela carrinhos, se não existir
+// Cria a tabela 'carrinhos' se não existir
 async function createTables() {
-  await pool.query(`CREATE TABLE IF NOT EXISTS carrinhos (
-    id SERIAL PRIMARY KEY,
-    usuario_id VARCHAR(255) NOT NULL,
-    produto_id INT NOT NULL,
-    quantidade INT NOT NULL
-  )`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS carrinhos (
+      id SERIAL PRIMARY KEY,
+      usuario_id VARCHAR(255) NOT NULL,
+      produto_id INT NOT NULL,
+      quantidade INT NOT NULL
+    );
+  `);
 }
 
-// Middleware de autenticação
+// Middleware para validar JWT
 function authenticateToken(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ erro: 'Token ausente!' });
@@ -33,7 +35,7 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// Conexão com RabbitMQ e criação de fila
+// Conecta no RabbitMQ e declara fila 'carrinho-evento'
 let channel;
 async function connectRabbitMQ(retries = 10) {
   while (retries > 0) {
@@ -41,7 +43,7 @@ async function connectRabbitMQ(retries = 10) {
       const connection = await amqp.connect(process.env.RABBITMQ_URL || 'amqp://localhost');
       channel = await connection.createChannel();
       await channel.assertQueue('carrinho-evento');
-      console.log('✅ Conectado ao RabbitMQ!');
+      console.log('✅ carrinho-service conectado ao RabbitMQ!');
       return;
     } catch (err) {
       console.error(`❌ Erro ao conectar ao RabbitMQ (${retries} tentativas restantes):`, err.message);
@@ -62,11 +64,13 @@ app.post('/carrinho', authenticateToken, async (req, res) => {
   }
 
   try {
+    // Insere no banco (mesmo 'ecommerce', tabela carrinhos)
     await pool.query(
       'INSERT INTO carrinhos (usuario_id, produto_id, quantidade) VALUES ($1, $2, $3)',
       [usuario_id, produto_id, quantidade]
     );
 
+    // Publica evento no RabbitMQ
     if (channel) {
       channel.sendToQueue(
         'carrinho-evento',
@@ -82,14 +86,13 @@ app.post('/carrinho', authenticateToken, async (req, res) => {
     }
 
     res.status(201).json({ mensagem: 'Item adicionado ao carrinho!' });
-
   } catch (err) {
     console.error('Erro ao adicionar item ao banco:', err.message);
     res.status(500).json({ erro: 'Erro ao adicionar item ao carrinho.' });
   }
 });
 
-// Endpoint para listar carrinho
+// Endpoint para listar itens do carrinho de um usuário (GET /carrinho/:usuario_id)
 app.get('/carrinho/:usuario_id', async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -103,10 +106,15 @@ app.get('/carrinho/:usuario_id', async (req, res) => {
   }
 });
 
-// Carrinho-service - manter endpoints existentes
+// Endpoint para limpar o carrinho de um usuário (DELETE /carrinho/:usuario_id)
 app.delete('/carrinho/:usuario_id', async (req, res) => {
-  await pool.query('DELETE FROM carrinhos WHERE usuario_id = $1', [req.params.usuario_id]);
-  res.status(204).end();
+  try {
+    await pool.query('DELETE FROM carrinhos WHERE usuario_id = $1', [req.params.usuario_id]);
+    res.status(204).end();
+  } catch (err) {
+    console.error('Erro ao limpar carrinho:', err);
+    res.status(500).json({ erro: 'Erro ao limpar carrinho.' });
+  }
 });
 
 // Inicialização
@@ -116,7 +124,7 @@ const PORT = 3000;
     await createTables();
     await connectRabbitMQ();
     app.listen(PORT, () => {
-      console.log(`🚀 Serviço de carrinho rodando na porta ${PORT}`);
+      console.log(`🚀 carrinho-service rodando na porta ${PORT}`);
     });
   } catch (err) {
     console.error('🛑 Erro na inicialização:', err);

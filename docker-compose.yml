@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
 
-  carrinho-db:
+  db:
     image: postgres:13
     environment:
       POSTGRES_DB: ecommerce
@@ -15,24 +15,7 @@ services:
       interval: 10s
       retries: 5
     volumes:
-      - carrinho_data:/var/lib/postgresql/data
-    networks:
-      - minha-rede-api
-
-  pedidos-db:
-    image: postgres:14
-    environment:
-      POSTGRES_DB: pedidos
-      POSTGRES_USER: ecommerce_user
-      POSTGRES_PASSWORD: ecommerce_pass
-    ports:
-      - "5434:5432"
-    volumes:
-      - pedidos_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "ecommerce_user", "-d", "pedidos"]
-      interval: 10s
-      retries: 5
+      - db_data:/var/lib/postgresql/data
     networks:
       - minha-rede-api
 
@@ -41,7 +24,7 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
-    networks:  # Adicione esta seção
+    networks:
       - minha-rede-api
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
@@ -93,14 +76,19 @@ services:
     environment:
       RABBITMQ_URL: amqp://rabbitmq
       JWT_SECRET: supersecretkey
-      DATABASE_URL: postgresql://ecommerce_user:ecommerce_pass@carrinho-db:5432/ecommerce
+      DATABASE_URL: postgresql://ecommerce_user:ecommerce_pass@db:5432/ecommerce
     depends_on:
-      carrinho-db:
+      db:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
     networks:
       - minha-rede-api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   pedidos-service:
     build: ./pedidos-service
@@ -108,14 +96,22 @@ services:
       - "3003:3000"
     environment:
       RABBITMQ_URL: amqp://rabbitmq
-      DATABASE_URL: postgresql://ecommerce_user:ecommerce_pass@pedidos-db:5432/pedidos  # Usa apenas seu próprio banco
+      DATABASE_URL: postgresql://ecommerce_user:ecommerce_pass@db:5432/ecommerce
     depends_on:
-      pedidos-db:
+      db:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      carrinho-service:     # agora espera que o carrinho-service esteja iniciado
+        condition: service_started
     networks:
       - minha-rede-api
+    # (Opcional) healthcheck se você adicionar um endpoint /health em pedidos-service:
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 5
 
   auth-service:
     build: ./auth-service
@@ -166,8 +162,7 @@ services:
       - minha-rede-api
 
 volumes:
-  pedidos_data:
-  carrinho_data:
+  db_data:
   grafana_data:
 
 networks:

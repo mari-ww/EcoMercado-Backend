@@ -68,8 +68,32 @@ listar_carrinho() {
   fi
   [[ -z "$USUARIO_ID" ]] && read -p "ID do usuário: " USUARIO_ID
 
+  echo "=== Itens no carrinho ==="
   curl -s -X GET "http://localhost/carrinho/$USUARIO_ID" \
-    -H "Authorization: Bearer $TOKEN" | jq
+    -H "Authorization: Bearer $TOKEN" \
+    | jq -r '
+        if (length == 0) then
+          "Nenhum item no carrinho."
+        else
+          .[] | "produto_id: \(.produto_id) | quantidade: \(.quantidade)"
+        end
+      '
+
+  echo
+  echo "=== Pedidos pendentes deste usuário ==="
+  curl -s -X GET "http://localhost/pedidos/$USUARIO_ID" \
+    -H "Authorization: Bearer $TOKEN" \
+    | jq -r '
+        # Para cada pedido do array:
+        .[]
+        # Filtra somente os que têm status "pendente":
+        | select(.status == "pendente")
+        # Imprime o cabeçalho com o id do pedido
+        | "Pedido pendente: \(.id)",
+          # E logo abaixo, para cada item dentro de .itens[], imprime produto_id e quantidade
+          ( .itens[] | "  produto_id: \(.produto_id) | quantidade: \(.quantidade)" )
+      ' \
+    || echo "Nenhum pedido pendente."
 }
 
 limpar_carrinho() {
@@ -79,7 +103,12 @@ limpar_carrinho() {
   fi
 
   echo "Limpando carrinho do usuário $USUARIO_ID..."
-  curl -X DELETE "http://localhost/carrinho/$USUARIO_ID" \
+  curl -s -X DELETE "http://localhost/carrinho/$USUARIO_ID" \
+    -H "Authorization: Bearer $TOKEN"
+  echo
+
+  echo "Apagando pedidos pendentes do usuário $USUARIO_ID..."
+  curl -s -X DELETE "http://localhost/pedidos/pendentes/$USUARIO_ID" \
     -H "Authorization: Bearer $TOKEN"
   echo
 }
@@ -91,14 +120,22 @@ confirmar_pagamento() {
   echo
 }
 
-ver_pedidos() {
+ver_status_pedido() {
   if [[ -z "$TOKEN" || -z "$USUARIO_ID" ]]; then
     echo "Faça login e defina o ID do usuário primeiro."
     return 1
   fi
 
-  curl -X GET http://localhost/pedidos/$USUARIO_ID \
-    -H "Authorization: Bearer $TOKEN" | jq
+  read -p "ID do pedido a consultar: " PEDIDO_ID
+
+  echo "Buscando pedidos do usuário $USUARIO_ID para encontrar o ID $PEDIDO_ID..."
+  # Consulta todos os pedidos do usuário e filtra
+  curl -s -X GET "http://localhost/pedidos/$USUARIO_ID" \
+    -H "Authorization: Bearer $TOKEN" | \
+    jq -r --arg ID "$PEDIDO_ID" '
+      .[] | select(.id == $ID) | 
+      {id: .id, status: .status, itens: .itens}
+    ' || echo "Pedido $PEDIDO_ID não encontrado."
 }
 
 validar_token() {
@@ -173,7 +210,6 @@ while true; do
     "Adicionar item ao carrinho"
     "Listar carrinho"
     "Limpar carrinho"
-    "Listar pedidos"
     "Efetuar pagamento"       # Nova opção
     "Ver status do pedido"    # Nova opção
     "Validar token"
@@ -191,16 +227,15 @@ while true; do
       2) add_carrinho ;;
       3) listar_carrinho ;;
       4) limpar_carrinho ;;
-      5) ver_pedidos ;;
-      6) confirmar_pagamento ;;    # Renomeado de confirmar_pagamento para efetuar_pagamento
-      7) ver_status_pedido ;;      # Nova função a ser implementada
-      8) validar_token ;;     # Antiga opção 6
-      9) testar_cache ;;      # Antiga opção 7
-      10) limpar_cache ;;      # Antiga opção 8
-      11) teste_circuit_breaker ;; # Antiga opção 9
-      12) ver_metricas ;;     # Antiga opção 10
-      13) mostrar_urls ;;     # Antiga opção 11
-      14) echo "Saindo..."; exit 0 ;; # Ajustado para 13
+      5) confirmar_pagamento ;;    # Renomeado de confirmar_pagamento para efetuar_pagamento
+      6) ver_status_pedido ;;      # Nova função a ser implementada
+      7) validar_token ;;     # Antiga opção 6
+      8) testar_cache ;;      # Antiga opção 7
+      9) limpar_cache ;;      # Antiga opção 8
+      10) teste_circuit_breaker ;; # Antiga opção 9
+      11) ver_metricas ;;     # Antiga opção 10
+      12) mostrar_urls ;;     # Antiga opção 11
+      13) echo "Saindo..."; exit 0 ;; # Ajustado para 13
       *) echo "Opção inválida." ;;
     esac
     read -p "Pressione ENTER para continuar..."
