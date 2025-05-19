@@ -1,0 +1,11 @@
+groups:
+- name: api-gateway-alerts
+  rules:
+  - alert: HighCacheMissRate
+    expr: nginx_cache_miss{zone="produtos_cache"} / (nginx_cache_hit{zone="produtos_cache"} + nginx_cache_miss{zone="produtos_cache"}) > 0.5
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Alta taxa de cache miss no gateway"
+      description: "Cache miss ratio > 50% por 5 minutos"
