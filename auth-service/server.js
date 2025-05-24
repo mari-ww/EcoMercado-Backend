@@ -1,8 +1,18 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const cors = require('cors');
 
 const app = express();
+
+// Configuração do CORS
+// const corsOptions = {
+//   origin: 'http://localhost:3005',
+//   credentials: true,
+// };
+
+// app.use(cors(corsOptions));
+app.use(cors());
 app.use(express.json());
 
 // Verifica variáveis de ambiente obrigatórias
@@ -16,30 +26,27 @@ const users = [
   { 
     id: "123", 
     email: "user@teste.com", 
-    senha: bcrypt.hashSync("senha123", 8)
+    password: bcrypt.hashSync("senha123", 8)
   }
 ];
 
 // Endpoint de login
 app.post('/login', (req, res) => {
-  const { email, senha } = req.body;
+  const { email, password } = req.body;
 
-  if (!email || !senha) {
+  if (!email || !password) {
     return res.status(400).json({ erro: 'Credenciais obrigatórias!' });
   }
 
   const user = users.find(u => u.email === email);
-  
-  if (!user || !bcrypt.compareSync(senha, user.senha)) {
+
+  if (!user || !bcrypt.compareSync(password, user.password)) {
     return res.status(401).json({ erro: 'Credenciais inválidas!' });
   }
 
   const token = jwt.sign(
-    { 
-      id: user.id,
-      email: user.email 
-    }, 
-    process.env.JWT_SECRET, 
+    { id: user.id, email: user.email },
+    process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
 

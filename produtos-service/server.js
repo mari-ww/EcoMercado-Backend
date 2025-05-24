@@ -19,6 +19,10 @@ app.get('/produtos', (req, res) => {
   res.json(produtos);
 });
 
+app.get('/teste', (req,res)=>{
+  res.send("Produtos - Teste!")
+})
+
 const PORT = 3000;
 app.listen(PORT, () => {
   console.log(`Serviço de produtos rodando na porta ${PORT}`);

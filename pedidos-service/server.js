@@ -189,6 +189,11 @@ app.delete('/pedidos/pendentes/:usuario_id', async (req, res) => {
     res.status(500).json({ erro: 'Erro interno ao apagar pedidos pendentes.' });
   }
 });
+app.get('/teste', (req,res)=>{
+  res.send("Pedidos - Teste!")
+})
+
+
 
 // Inicializa servidor após criar tabelas e conectar ao RabbitMQ
 const PORT = 3000;

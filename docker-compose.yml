@@ -51,6 +51,41 @@ services:
       - ./api-gateway/nginx.conf:/etc/nginx/nginx.conf
       - ./api-gateway/init.sh:/etc/nginx/init.sh
       - ./api-gateway/cache:/var/cache/nginx
+  gateway-node:
+    build: ./gateway-node
+    ports:
+      - "8080:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      produtos-service:
+        condition: service_healthy
+      carrinho-service:
+        condition: service_healthy
+      pedidos-service:
+        condition: service_started
+      auth-service:
+        condition: service_healthy
+    environment:
+      NODE_ENV: docker
+      RABBITMQ_URL: amqp://rabbitmq
+      DATABASE_URL: postgresql://ecommerce_user:ecommerce_pass@db:5432/ecommerce
+      PRODUTOS_SERVICE_URL: http://produtos-service:3000
+      CARRINHO_SERVICE_URL: http://carrinho-service:3000
+      PEDIDOS_SERVICE_URL: http://pedidos-service:3000
+      AUTH_SERVICE_URL: http://auth-service:3000
+    networks:
+      - minha-rede-api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+
 
   produtos-service:
     build: ./produtos-service
@@ -117,6 +152,11 @@ services:
     build: ./auth-service
     ports:
       - "3004:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     environment:
       JWT_SECRET: supersecretkey
       PORT: 3000

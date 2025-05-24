@@ -117,6 +117,11 @@ app.delete('/carrinho/:usuario_id', async (req, res) => {
   }
 });
 
+app.get('/teste', (req,res)=>{
+  res.send("Carrinho - Teste!")
+})
+
+
 // Inicialização
 const PORT = 3000;
 (async () => {
