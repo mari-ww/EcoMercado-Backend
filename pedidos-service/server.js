@@ -112,6 +112,16 @@ async function setupRabbitMQConsumer() {
             );
 
             console.log(`Novo pedido ${pedidoId} criado para usuario ${usuario_id} (produto ${item.produto_id}, quantidade ${item.quantidade})`);
+
+            // 3c) Enviar para a fila de pagamento
+            await channel.assertQueue('pagamento', { durable: true });
+            channel.sendToQueue('pagamento', Buffer.from(JSON.stringify({
+              id: pedidoId,
+              usuario_id: usuario_id,
+              itens: [item]
+            })), { persistent: true });
+
+            console.log(` [>] Pedido ${pedidoId} enviado para pagamento`);
           }
         }
       }

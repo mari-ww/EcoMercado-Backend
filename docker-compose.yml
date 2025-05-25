@@ -42,6 +42,7 @@ services:
       - rabbitmq
       - carrinho-service
       - pedidos-service
+      - pagamento-service    # novo serviço aqui
       - produtos-service
       - auth-service
     restart: unless-stopped
@@ -94,15 +95,13 @@ services:
     build: ./pedidos-service
     ports:
       - "3003:3000"
-    environment:
-      RABBITMQ_URL: amqp://rabbitmq
-      DATABASE_URL: postgresql://ecommerce_user:ecommerce_pass@db:5432/ecommerce
+    env_file: ./pedidos-service/.env    # usa o arquivo .env da pasta
     depends_on:
       db:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      carrinho-service:     # agora espera que o carrinho-service esteja iniciado
+      carrinho-service: #agora espera que o carrinho esteja iniciado
         condition: service_started
     networks:
       - minha-rede-api
@@ -112,6 +111,19 @@ services:
     #   interval: 10s
     #   timeout: 5s
     #   retries: 5
+
+  pagamento-service:
+    build: ./pagamento-service
+    ports:
+      - "3005:3000"
+    env_file: ./pagamento-service/.env   # novo serviço com seu .env
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - minha-rede-api
 
   auth-service:
     build: ./auth-service

@@ -1,0 +1,9 @@
+{
+  "name": "pagamento-service",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "amqplib": "^0.8.0",
+    "mysql2": "^3.14.1"
+  }
+}
