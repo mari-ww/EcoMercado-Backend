@@ -21,7 +21,7 @@ jobs:
         run: |
           echo "Esperando containers ficarem prontos..."
           docker compose ps
-          sleep 30  # tempo médio para subir tudo com healthchecks
+          sleep 30
 
       - name: Checar estado dos containers
         run: docker compose ps
@@ -41,7 +41,12 @@ jobs:
       - name: Testar se auth-service está OK
         run: curl --fail http://localhost:3004/health
 
-      # Opcional: parar os containers após os testes
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Rodar testes automatizados com Jest
+        run: npm test
+
       - name: Derrubar containers
         if: always()
         run: docker compose down
