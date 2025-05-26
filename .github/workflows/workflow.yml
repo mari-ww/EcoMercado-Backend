@@ -1,0 +1,47 @@
+name: Continuous Integration
+
+on:
+  pull_request:
+
+jobs:
+  docker-compose-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v3
+
+      - name: Setup do Docker Compose
+        run: docker compose version
+
+      - name: Build e Start dos Containers
+        run: docker compose up --build -d
+
+      - name: Esperar serviços estarem prontos
+        run: |
+          echo "Esperando containers ficarem prontos..."
+          docker compose ps
+          sleep 30  # tempo médio para subir tudo com healthchecks
+
+      - name: Checar estado dos containers
+        run: docker compose ps
+
+      - name: Verificar logs principais
+        run: docker compose logs --tail=50
+
+      - name: Testar se gateway-node está OK
+        run: curl --fail --show-error http://localhost:8080/health
+
+      - name: Testar se produtos-service está OK
+        run: curl --fail http://localhost:3001/health
+
+      - name: Testar se carrinho-service está OK
+        run: curl --fail http://localhost:3002/health
+
+      - name: Testar se auth-service está OK
+        run: curl --fail http://localhost:3004/health
+
+      # Opcional: parar os containers após os testes
+      - name: Derrubar containers
+        if: always()
+        run: docker compose down

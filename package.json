@@ -1,4 +1,16 @@
 {
+
+  "name": "ecoMercado-back-services",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:ps": "docker compose ps",
+    "format": "prettier --write .",
+    "lint": "eslint ."
+  },
   "dependencies": {
     "jsonwebtoken": "^9.0.2",
     "node-fetch": "^2.7.0"
