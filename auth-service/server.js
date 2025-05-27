@@ -86,6 +86,7 @@ app.get('/validate', (req, res) => {
   }
 });
 
+
 // Middleware de autenticação reutilizável
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers.authorization;

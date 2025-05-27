@@ -3,6 +3,7 @@ const cors = require('cors');    // importar cors
 const app = express();
 
 app.use(cors());                // habilitar CORS para todas origens
+app.options('*', cors());
 app.use(express.json());
 
 // Mock de produtos (conforme o frontend)
