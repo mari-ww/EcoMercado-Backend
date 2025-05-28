@@ -3,9 +3,47 @@ const amqp = require('amqplib');
 const { v4: uuidv4 } = require('uuid');
 const { Pool } = require('pg');
 const fetch = require('node-fetch');
+const prometheus = require('prom-client');
 
 const app = express();
 app.use(express.json());
+
+// ========== CONFIGURAÇÃO PROMETHEUS ==========
+// Criar métricas
+const httpRequestDurationMicroseconds = new prometheus.Histogram({
+  name: 'http_request_duration_ms',
+  help: 'Duração das requisições HTTP em ms',
+  labelNames: ['method', 'route', 'code'],
+  buckets: [0.1, 5, 15, 50, 100, 200, 300, 400, 500]
+});
+
+const orderStatusCounter = new prometheus.Counter({
+  name: 'order_status_changes_total',
+  help: 'Total de mudanças de status de pedido',
+  labelNames: ['from_status', 'to_status']
+});
+
+// Coletar métricas padrão
+prometheus.collectDefaultMetrics();
+
+// Middleware para medir tempo das requisições
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    httpRequestDurationMicroseconds
+      .labels(req.method, req.route?.path || req.path, res.statusCode)
+      .observe(duration);
+  });
+  next();
+});
+
+// Endpoint para métricas
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', prometheus.register.contentType);
+  res.end(await prometheus.register.metrics());
+});
+// ========== FIM CONFIGURAÇÃO PROMETHEUS ==========
 
 // PostgreSQL: todos usam o mesmo banco "ecommerce"
 const pool = new Pool({
@@ -37,18 +75,36 @@ async function connectRabbitMQ() {
 // Novo endpoint para simular pagamento
 app.post('/pedidos/:id/pagar', async (req, res) => {
   try {
-    // Atualiza status para 'pagamento efetuado'
+    const pedidoId = req.params.id;
+    
+    // Obter status atual
+    const statusResult = await pool.query(
+      'SELECT status FROM pedidos WHERE id = $1',
+      [pedidoId]
+    );
+    
+    if (statusResult.rowCount === 0) {
+      return res.status(404).json({ erro: 'Pedido não encontrado' });
+    }
+    
+    const currentStatus = statusResult.rows[0].status;
+    
+    // Atualizar status para 'pagamento efetuado'
     await pool.query(
       `UPDATE pedidos SET status = 'pagamento efetuado' WHERE id = $1`,
-      [req.params.id]
+      [pedidoId]
     );
+    
+    // Registrar mudança de status
+    orderStatusCounter.labels(currentStatus, 'pagamento efetuado').inc();
 
     // Em 3 minutos, atualiza para 'saiu para entrega'
     setTimeout(async () => {
       await pool.query(
         `UPDATE pedidos SET status = 'saiu para entrega' WHERE id = $1`,
-        [req.params.id]
+        [pedidoId]
       );
+      orderStatusCounter.labels('pagamento efetuado', 'saiu para entrega').inc();
     }, 180000);
 
     res.json({ mensagem: 'Pagamento confirmado! Pedido sairá em 3 minutos.' });
@@ -112,16 +168,6 @@ async function setupRabbitMQConsumer() {
             );
 
             console.log(`Novo pedido ${pedidoId} criado para usuario ${usuario_id} (produto ${item.produto_id}, quantidade ${item.quantidade})`);
-
-            // 3c) Enviar para a fila de pagamento
-            await channel.assertQueue('pagamento', { durable: true });
-            channel.sendToQueue('pagamento', Buffer.from(JSON.stringify({
-              id: pedidoId,
-              usuario_id: usuario_id,
-              itens: [item]
-            })), { persistent: true });
-
-            console.log(` [>] Pedido ${pedidoId} enviado para pagamento`);
           }
         }
       }

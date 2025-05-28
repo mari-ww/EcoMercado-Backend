@@ -2,9 +2,47 @@ const express = require('express');
 const amqp = require('amqplib');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
+const prometheus = require('prom-client');
 
 const app = express();
 app.use(express.json());
+
+// ========== CONFIGURAÇÃO PROMETHEUS ==========
+// Criar métricas
+const httpRequestDurationMicroseconds = new prometheus.Histogram({
+  name: 'http_request_duration_ms',
+  help: 'Duração das requisições HTTP em ms',
+  labelNames: ['method', 'route', 'code'],
+  buckets: [0.1, 5, 15, 50, 100, 200, 300, 400, 500]
+});
+
+const cartOperationsCounter = new prometheus.Counter({
+  name: 'cart_operations_total',
+  help: 'Total de operações no carrinho',
+  labelNames: ['operation', 'status']
+});
+
+// Coletar métricas padrão
+prometheus.collectDefaultMetrics();
+
+// Middleware para medir tempo das requisições
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    httpRequestDurationMicroseconds
+      .labels(req.method, req.route?.path || req.path, res.statusCode)
+      .observe(duration);
+  });
+  next();
+});
+
+// Endpoint para métricas
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', prometheus.register.contentType);
+  res.end(await prometheus.register.metrics());
+});
+// ========== FIM CONFIGURAÇÃO PROMETHEUS ==========
 
 // PostgreSQL (mesmo DATABASE_URL apontando para 'db:5432/ecommerce')
 const pool = new Pool({
@@ -60,6 +98,7 @@ app.post('/carrinho', authenticateToken, async (req, res) => {
   const usuario_id = req.user.id;
 
   if (!usuario_id || !produto_id || !quantidade) {
+    cartOperationsCounter.labels('add', 'invalid_input').inc();
     return res.status(400).json({ mensagem: 'Dados incompletos.' });
   }
 
@@ -85,8 +124,10 @@ app.post('/carrinho', authenticateToken, async (req, res) => {
       console.warn('⚠️ Canal RabbitMQ não disponível. Evento não publicado.');
     }
 
+    cartOperationsCounter.labels('add', 'success').inc();
     res.status(201).json({ mensagem: 'Item adicionado ao carrinho!' });
   } catch (err) {
+    cartOperationsCounter.labels('add', 'error').inc();
     console.error('Erro ao adicionar item ao banco:', err.message);
     res.status(500).json({ erro: 'Erro ao adicionar item ao carrinho.' });
   }
@@ -99,8 +140,10 @@ app.get('/carrinho/:usuario_id', async (req, res) => {
       'SELECT * FROM carrinhos WHERE usuario_id = $1',
       [req.params.usuario_id]
     );
+    cartOperationsCounter.labels('list', 'success').inc();
     res.json(rows);
   } catch (err) {
+    cartOperationsCounter.labels('list', 'error').inc();
     console.error('Erro ao buscar carrinho:', err.message);
     res.status(500).json({ erro: 'Erro ao buscar carrinho.' });
   }
@@ -110,8 +153,10 @@ app.get('/carrinho/:usuario_id', async (req, res) => {
 app.delete('/carrinho/:usuario_id', async (req, res) => {
   try {
     await pool.query('DELETE FROM carrinhos WHERE usuario_id = $1', [req.params.usuario_id]);
+    cartOperationsCounter.labels('clear', 'success').inc();
     res.status(204).end();
   } catch (err) {
+    cartOperationsCounter.labels('clear', 'error').inc();
     console.error('Erro ao limpar carrinho:', err);
     res.status(500).json({ erro: 'Erro ao limpar carrinho.' });
   }

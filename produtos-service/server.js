@@ -1,9 +1,47 @@
 const express = require('express');
-const cors = require('cors');    // importar cors
-const app = express();
+const cors = require('cors');
+const prometheus = require('prom-client');
 
-app.use(cors());                // habilitar CORS para todas origens
+const app = express();
+app.use(cors());
 app.use(express.json());
+
+// ========== CONFIGURAÇÃO PROMETHEUS ==========
+// Criar métricas
+const httpRequestDurationMicroseconds = new prometheus.Histogram({
+  name: 'http_request_duration_ms',
+  help: 'Duração das requisições HTTP em ms',
+  labelNames: ['method', 'route', 'code'],
+  buckets: [0.1, 5, 15, 50, 100, 200, 300, 400, 500]
+});
+
+const productRequestsCounter = new prometheus.Counter({
+  name: 'product_requests_total',
+  help: 'Total de requisições para produtos',
+  labelNames: ['endpoint']
+});
+
+// Coletar métricas padrão
+prometheus.collectDefaultMetrics();
+
+// Middleware para medir tempo das requisições
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    httpRequestDurationMicroseconds
+      .labels(req.method, req.route?.path || req.path, res.statusCode)
+      .observe(duration);
+  });
+  next();
+});
+
+// Endpoint para métricas
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', prometheus.register.contentType);
+  res.end(await prometheus.register.metrics());
+});
+// ========== FIM CONFIGURAÇÃO PROMETHEUS ==========
 
 // Mock de produtos (conforme o frontend)
 const produtos = [
@@ -17,8 +55,9 @@ const produtos = [
 
 // Endpoint para listar produtos
 app.get('/produtos', (req, res) => {
+  productRequestsCounter.labels('list').inc();
   res.setHeader('Cache-Control', 'public, max-age=600');
-  res.setHeader('Vary', 'Authorization'); // Isso é essencial!
+  res.setHeader('Vary', 'Authorization');
   res.json(produtos);
 });
 

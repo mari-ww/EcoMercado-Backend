@@ -10,7 +10,12 @@ scrape_configs:
 
   - job_name: 'services'
     static_configs:
-      - targets: ['produtos-service:3001', 'carrinho-service:3002', 'pedidos-service:3003']
+      - targets:
+          - 'produtos-service:8080'
+          - 'carrinho-service:3000'
+          - 'pedidos-service:3000'
+          - 'auth-service:3000'
+          - 'pagamento-service:3001'  # Nova entrada
 
 rule_files:
   - alerts.yml

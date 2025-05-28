@@ -1,9 +1,47 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const prometheus = require('prom-client');
 
 const app = express();
 app.use(express.json());
+
+// ========== CONFIGURAÇÃO PROMETHEUS ==========
+// Criar métricas
+const httpRequestDurationMicroseconds = new prometheus.Histogram({
+  name: 'http_request_duration_ms',
+  help: 'Duração das requisições HTTP em ms',
+  labelNames: ['method', 'route', 'code'],
+  buckets: [0.1, 5, 15, 50, 100, 200, 300, 400, 500]
+});
+
+const loginCounter = new prometheus.Counter({
+  name: 'auth_login_attempts_total',
+  help: 'Total de tentativas de login',
+  labelNames: ['status']
+});
+
+// Coletar métricas padrão
+prometheus.collectDefaultMetrics();
+
+// Middleware para medir tempo das requisições
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    httpRequestDurationMicroseconds
+      .labels(req.method, req.route?.path || req.path, res.statusCode)
+      .observe(duration);
+  });
+  next();
+});
+
+// Endpoint para métricas
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', prometheus.register.contentType);
+  res.end(await prometheus.register.metrics());
+});
+// ========== FIM CONFIGURAÇÃO PROMETHEUS ==========
 
 // Verifica variáveis de ambiente obrigatórias
 if (!process.env.JWT_SECRET) {
@@ -25,12 +63,14 @@ app.post('/login', (req, res) => {
   const { email, senha } = req.body;
 
   if (!email || !senha) {
+    loginCounter.labels('missing_credentials').inc();
     return res.status(400).json({ erro: 'Credenciais obrigatórias!' });
   }
 
   const user = users.find(u => u.email === email);
   
   if (!user || !bcrypt.compareSync(senha, user.senha)) {
+    loginCounter.labels('invalid_credentials').inc();
     return res.status(401).json({ erro: 'Credenciais inválidas!' });
   }
 
@@ -43,6 +83,7 @@ app.post('/login', (req, res) => {
     { expiresIn: '1h' }
   );
 
+  loginCounter.labels('success').inc();
   res.json({ token });
 });
 
